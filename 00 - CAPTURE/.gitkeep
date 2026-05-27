@@ -1,0 +1,7 @@
+# .gitkeep — 00 - CAPTURE/ (true inbox, zero decisions)
+
+# Part of the strict 8-folder Engram vault structure.
+# See: Engram-Spec-v1.0.md, BRAIN.md §Operating Rules, AGENTS.md
+# This placeholder keeps the directory in git (git does not track empty dirs).
+# All real captures are processed by evening Capture Processor → classified to correct folder then archived.
+# No other files should be committed from here.

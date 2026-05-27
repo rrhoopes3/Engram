@@ -1,0 +1,7 @@
+# .gitkeep — 05 - QUEUE/ (VERB-TOPIC.md items for engram-mcp / N8N)
+
+# Part of the strict 8-folder Engram vault structure.
+# See: Engram-Spec-v1.0.md, BRAIN.md §Queue Discipline
+# Files dropped here (RESEARCH-*, PLAN-*, REVIEW-*) are consumed by Queue Processor.
+# This placeholder ensures the directory appears in the repo and clones.
+# Real queue files are transient and archived after processing.

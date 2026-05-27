@@ -1,0 +1,7 @@
+# .gitkeep — 07 - ARCHIVE/ (never-delete history)
+
+# Part of the strict 8-folder Engram vault structure.
+# See: BRAIN.md "Never Delete: ... only archive to 07 - ARCHIVE/ with timestamp"
+# All completed/outdated items go here (timestamped filenames). Never rm -rf.
+# This placeholder keeps the directory (and its history) in the repo.
+# Test/evil artifacts and large binaries are filtered by .gitignore.

@@ -1,0 +1,63 @@
+version: "3.8"
+
+# Full-stack example (N8N + engram-mcp). 
+# For production engram-mcp ONLY (no N8N required, recommended starting point on VPS):
+#   - Use the lean `docker-compose.yml` in this directory (see README.md for setup + systemd).
+#   - It exposes the same HTTP endpoint and uses the same non-root + configurable vault pattern.
+# This file is kept for when you later add the N8N automation layer on top of the running engram-mcp.
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    # Standard n8n config. The built-in MCP Client node calls engram-mcp over the Docker network (http://engram-mcp:8000/mcp).
+    # Set N8N_HOST / N8N_PROTOCOL etc. for your domain/reverse proxy as needed.
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n   # Persistent n8n data (workflows, credentials, executions). Critical for VPS.
+    networks:
+      - brain-net
+
+  engram-mcp:
+    build: .
+    # Production mode: run as persistent Streamable HTTP MCP server (FastMCP native, "http" arg).
+    # N8N workflows (via built-in MCP Client node) call tools at http://engram-mcp:8000/mcp (Docker DNS via brain-net).
+    # No process spawning from n8n, clean container separation.
+    command: python -m engram_mcp.server http
+    restart: unless-stopped
+    ports:
+      # Bind to loopback on host for consistency with the recommended lean production docker-compose.yml.
+      # Internal Docker network (brain-net) still allows n8n -> http://engram-mcp:8000/mcp without host publish.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Mount your real Brain vault (the folder containing 00 - CAPTURE/, 03 - SYSTEM/BRAIN.md, etc.)
+      # Use absolute host path on your VPS. rw is REQUIRED (tools write GENERATED/ + logs/).
+      # Prefer the .env-driven approach in the standalone docker-compose.yml (see README).
+      - /absolute/path/on/vps/to/Brain:/vault:rw
+    environment:
+      - BRAIN_VAULT_PATH=/vault
+      # Optional for future Grok API calls inside tools:
+      # - XAI_API_KEY=${XAI_API_KEY}
+    healthcheck:
+      # Uses the dedicated /app/healthcheck.py probe (single source of truth, robust ✅ predicate, BRAIN.md-first).
+      # Enables `docker compose ps` visibility; adapt path in volumes if using this full-stack example.
+      test: ["CMD", "python", "/app/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - brain-net
+
+# For local testing of stdio (Grok TUI etc.): run `python -m engram_mcp.server` (no arg) from the engram-mcp/ dir
+# or from host python that has `pip install -e .` done in engram-mcp/.
+# The http mode (default in this compose) is the one used by the production N8N workflows in 03 - SYSTEM/workflows/n8n/.
+
+# Named volumes + network for true "docker compose up" experience on VPS (n8n data persists; service DNS for engram-mcp works out of box).
+volumes:
+  n8n_data:
+
+networks:
+  brain-net:
+    driver: bridge

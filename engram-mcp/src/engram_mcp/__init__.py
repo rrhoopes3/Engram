@@ -1,0 +1,1 @@
+"""engram-mcp package — Grok intelligence layer for the Engram via MCP."""

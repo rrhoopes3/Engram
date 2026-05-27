@@ -1,0 +1,82 @@
+# Obsidian
+.obsidian/
+.obsidian/workspace.json
+.obsidian/cache/
+.obsidian/plugins/*/data.json
+*.obsidian
+
+# OS generated
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / temp
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+
+# N8N (if workflows exported locally for testing)
+n8n/
+*.n8n
+
+# Legacy Claude Desktop temp / logs (if any — now engram-mcp)
+claude-logs/
+
+# Build / generated artifacts that shouldn't be committed
+**/GENERATED/briefings/*-test*.md
+**/GENERATED/summaries/*-test*.md
+
+# Large binaries (screenshots, downloads, etc. — store in ARCHIVE or external)
+*.zip
+*.rar
+*.7z
+*.mp4
+*.mov
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# Exceptions: allow small useful images or PDFs if you really want them in git
+# !02 - RESOURCES/references/important-diagram.png
+
+# Logs can grow; consider rotating or .gitkeep only
+03 - SYSTEM/logs/*.log
+# But keep the .md log files (they are structured)
+!03 - SYSTEM/logs/*.md
+
+# Environment / secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Engram specific - we generally want to keep ARCHIVE history,
+# but ignore large test/spam files that may appear during development
+07 - ARCHIVE/*-test*
+07 - ARCHIVE/*evil*
