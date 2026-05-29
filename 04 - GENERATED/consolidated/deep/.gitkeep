@@ -1,0 +1,7 @@
+﻿# Deep Sleep (BES) artifacts location
+
+Higher-quality Bidirectional Evolutionary Search consolidations.
+Filenames: deep-YYYY-MM-DD-HHMM-consolidation.md
+
+Part of Engram POS Deep Sleep Mode (added ~2026-05).
+This dir is whitelisted via vault layer for GENERATED writes.
