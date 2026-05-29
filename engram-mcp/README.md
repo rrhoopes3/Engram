@@ -23,6 +23,7 @@ This is the intelligence layer of the Engram POS. It's a dedicated MCP server th
 | `engram_run_weekly_review`         | Sunday review + auto-update priorities           | Sunday 7:00 PM           |
 | `engram_run_project_health_monitor`| Score projects, flag stalled work                | Monday 7:00 AM           |
 | `engram_trigger_sleep`             | Recurrent offline passes → consolidated fast memory in GENERATED/consolidated/ | 03:00 AM nightly (or manual) |
+| `engram_trigger_deep_sleep`        | **Optional** Bidirectional Evolutionary Search (BES) for higher-quality trajectory recombination + subgoal progress. Writes to consolidated/deep/. | Manual / weekends (advanced) |
 
 ## Development (local)
 

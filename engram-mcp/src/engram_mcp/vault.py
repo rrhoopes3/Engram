@@ -46,6 +46,8 @@ class Vault:
 
     GENERATED_SUBS = ["briefings", "summaries", "analyses", "drafts", "consolidated"]
 
+    # Deep Sleep (BES) and future advanced modes may write to consolidated/deep/
+    # for organized higher-quality artifacts. Explicitly allowlisted below.
     # Strict date format for all date-prefixed files (prevents path injection)
     DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -145,8 +147,9 @@ class Vault:
         - full path containment under the approved subdir (prevents ../ escapes)
         - Uses _safe_path for root containment.
         """
-        if sub not in self.GENERATED_SUBS:
-            raise VaultError(f"Invalid GENERATED subfolder: {sub}. Allowed: {self.GENERATED_SUBS}")
+        allowed = set(self.GENERATED_SUBS) | {"consolidated/deep"}
+        if sub not in allowed:
+            raise VaultError(f"Invalid GENERATED subfolder: {sub}. Allowed: {sorted(allowed)}")
         if "/" in filename or "\\" in filename or ".." in filename:
             raise VaultError(f"Unsafe filename for GENERATED write: {filename}")
         if not filename.endswith(".md"):

@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pytest
 from engram_mcp.vault import Vault, VaultError, get_vault
-from engram_mcp import server as brain_server
+from engram_mcp import server as engram_server
 from engram_mcp.sleep import (
     collect_recent_context,
     run_recurrent_passes,
@@ -34,6 +34,9 @@ from engram_mcp.sleep import (
     propose_brain_update,
     get_last_sleep_status,
     ALLOWED_SCOPES,
+    trigger_deep_sleep_cycle,
+    get_last_deep_sleep_status,
+    run_bidirectional_evolutionary_search,
 )
 
 
@@ -102,8 +105,8 @@ def test_sleep_module_imports_and_callable():
 
 def test_engram_trigger_sleep_tool_exposed():
     """Tool registered on server (via decorator)."""
-    assert hasattr(brain_server, "engram_trigger_sleep")
-    assert callable(brain_server.engram_trigger_sleep)
+    assert hasattr(engram_server, "engram_trigger_sleep")
+    assert callable(engram_server.engram_trigger_sleep)
 
 
 def test_sleep_dry_run_no_write_only_log(minimal_vault, tmp_path):
@@ -111,7 +114,7 @@ def test_sleep_dry_run_no_write_only_log(minimal_vault, tmp_path):
     import engram_mcp.vault as vault_mod
     vault_mod._vault_instance = v  # force singleton for server glue (uses get_vault)
     _ = v.read_brain_md()  # prime log file
-    result = brain_server.engram_trigger_sleep(n_passes=2, scope="manual", dry_run=True)
+    result = engram_server.engram_trigger_sleep(n_passes=2, scope="manual", dry_run=True)
     assert result.startswith("✅ DRY-RUN SUCCESS (log only)")
     assert "Preview" in result  # non-deterministic preview content ok
     # No artifact created
@@ -131,7 +134,7 @@ def test_sleep_real_run_writes_artifact_and_logs(minimal_vault, tmp_path):
     import engram_mcp.vault as vault_mod
     vault_mod._vault_instance = v  # force singleton for server glue (uses get_vault)
     _ = v.read_brain_md()  # prime log file
-    result = brain_server.engram_trigger_sleep(n_passes=2, scope="nightly", dry_run=False)
+    result = engram_server.engram_trigger_sleep(n_passes=2, scope="nightly", dry_run=False)
     assert result.startswith("✅ SUCCESS: Sleep Cycle complete.")
     assert "consolidated" in result  # path separator varies (Windows backslash)
 
@@ -159,10 +162,10 @@ def test_sleep_validation_errors_return_clean_messages(minimal_vault):
     v = minimal_vault
     import engram_mcp.vault as vault_mod
     vault_mod._vault_instance = v  # force singleton for server glue (uses get_vault)
-    bad_p = brain_server.engram_trigger_sleep(n_passes=99, scope="nightly")
+    bad_p = engram_server.engram_trigger_sleep(n_passes=99, scope="nightly")
     assert bad_p.startswith("❌ SLEEP CYCLE PARAM ERROR")
 
-    bad_s = brain_server.engram_trigger_sleep(n_passes=1, scope="evil-scope")
+    bad_s = engram_server.engram_trigger_sleep(n_passes=1, scope="evil-scope")
     assert bad_s.startswith("❌ SLEEP CYCLE PARAM ERROR")
 
 
@@ -178,7 +181,7 @@ def test_sleep_proposal_contains_gate_and_no_brain_write(minimal_vault, tmp_path
     vault_mod._vault_instance = v  # force singleton for server glue (uses get_vault)
     brain_path = tmp_path / "03 - SYSTEM" / "BRAIN.md"
     before = brain_path.read_text(encoding="utf-8")
-    _ = brain_server.engram_trigger_sleep(n_passes=1, dry_run=False)
+    _ = engram_server.engram_trigger_sleep(n_passes=1, dry_run=False)
     after = brain_path.read_text(encoding="utf-8")
     assert before == after, "Sleep must NEVER edit BRAIN.md"
 
@@ -217,3 +220,78 @@ def test_sleep_uses_archive_safety_and_read_file(minimal_vault):
     assert "DRY-RUN" in res or "SUCCESS" in res  # works either way
     # No new deletes
     assert archived.exists()
+
+
+# ============================================================
+# New tests for Deep Sleep (BES) mode — adapted for engram-mcp
+# ============================================================
+
+def test_deep_sleep_module_imports_and_callable():
+    assert callable(trigger_deep_sleep_cycle)
+    assert callable(get_last_deep_sleep_status)
+    assert callable(run_bidirectional_evolutionary_search)
+
+
+def test_engram_trigger_deep_sleep_tool_exposed():
+    assert hasattr(engram_server, "engram_trigger_deep_sleep")
+    assert callable(engram_server.engram_trigger_deep_sleep)
+
+
+def test_deep_sleep_dry_run_no_write_and_produces_evolved_output(minimal_vault, tmp_path):
+    v = minimal_vault
+    import engram_mcp.vault as vault_mod
+    vault_mod._vault_instance = v
+    _ = v.read_brain_md()
+
+    result = engram_server.engram_trigger_deep_sleep(generations=3, population_size=5, scope="deep-manual", dry_run=True)
+
+    assert result.startswith("✅ DEEP SLEEP DRY-RUN SUCCESS")
+    assert "BES" in result or "Deep Sleep" in result
+
+    deep_dir = tmp_path / "04 - GENERATED" / "consolidated" / "deep"
+    files = list(deep_dir.glob("*.md"))
+    assert len(files) == 0, "dry_run deep sleep must not persist artifact"
+
+
+def test_deep_sleep_real_run_writes_to_deep_subdir_and_logs(minimal_vault, tmp_path):
+    v = minimal_vault
+    import engram_mcp.vault as vault_mod
+    vault_mod._vault_instance = v
+    _ = v.read_brain_md()
+
+    result = engram_server.engram_trigger_deep_sleep(generations=2, population_size=4, scope="deep-manual", dry_run=False)
+
+    assert result.startswith("✅ SUCCESS: Deep Sleep (BES) complete.")
+    assert "consolidated/deep" in result or "deep-" in result
+
+    deep_dir = tmp_path / "04 - GENERATED" / "consolidated" / "deep"
+    arts = list(deep_dir.glob("deep-*-consolidation.md"))
+    assert len(arts) >= 1
+    art = arts[0]
+    txt = art.read_text(encoding="utf-8")
+
+    assert "# Deep Sleep (BES) Report" in txt
+    assert "Evolved Insights" in txt or "Bidirectional" in txt
+    assert "NEEDS HUMAN INPUT" in txt
+    assert "*Generated by engram_trigger_deep_sleep (BES)" in txt
+
+    log_path = (tmp_path / "03 - SYSTEM" / "logs" / "system-log.md")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "Deep Sleep (BES) complete" in log
+
+
+def test_deep_sleep_validation_errors_and_get_last_status(minimal_vault, tmp_path):
+    v = minimal_vault
+    import engram_mcp.vault as vault_mod
+    vault_mod._vault_instance = v
+
+    bad_g = engram_server.engram_trigger_deep_sleep(generations=99, population_size=5)
+    assert bad_g.startswith("❌ DEEP SLEEP PARAM ERROR")
+
+    _ = engram_server.engram_trigger_deep_sleep(generations=2, population_size=3, dry_run=False)
+
+    status = get_last_deep_sleep_status(v)
+    assert status is not None
+    assert "deep-" in status["filename"]
+    assert status["generations"] >= 2

@@ -16,10 +16,11 @@ xAI Grok API calls for richer synthesis.
 Key tools:
 - engram_generate_morning_briefing: daily briefing from BRAIN.md + daily note + calendar.
 - engram_process_capture: classify + file + archive (never-delete) from 00-CAPTURE/.
-- engram_health: lightweight readiness probe (BRAIN.md read + vault status + last sleep cycle).
-- engram_trigger_sleep(n_passes=3, scope="nightly"|"manual", dry_run=False): recurrent offline consolidation passes.
-  Writes 04 - GENERATED/consolidated/ artifact with Fast Memory Blocks + exact BRAIN.md proposal (human gate only).
-  get_last_sleep_status() feeds honest "Last sleep" into engram_health() output for observability.
+- engram_health: lightweight readiness probe (BRAIN.md read + vault status + last sleep + last *deep* sleep).
+- engram_trigger_sleep(...): fast recurrent consolidation (default nightly).
+- engram_trigger_deep_sleep(generations=4, population_size=6, scope="deep-manual", dry_run=False):
+  Optional Bidirectional Evolutionary Search (BES) mode for richer trajectory recombination.
+  Writes to 04 - GENERATED/consolidated/deep/. Still full rule compliance + human gate on BRAIN proposals.
 - Stubs: engram_process_queue, engram_run_weekly_review, engram_run_project_health_monitor (emit NEEDS HUMAN INPUT).
 
 All production deploys use the hardened Docker + systemd setup (localhost-only :8000 in compose).
@@ -41,7 +42,13 @@ except ImportError:
 from .vault import Vault, VaultError, get_vault
 
 # Sleep Cycles (memory consolidation via recurrent passes — "Language Models Need Sleep")
-from .sleep import trigger_sleep_cycle, get_last_sleep_status
+# + Deep Sleep (BES) — optional higher-quality evolutionary mode
+from .sleep import (
+    trigger_sleep_cycle,
+    get_last_sleep_status,
+    trigger_deep_sleep_cycle,
+    get_last_deep_sleep_status,
+)
 
 
 # Create the MCP server using the modern FastMCP SDK (compatible with current mcp package)
@@ -295,17 +302,22 @@ def engram_run_project_health_monitor() -> str:
 def engram_health() -> str:
     """Lightweight health/readiness probe for N8N monitoring, Docker healthchecks, or manual verification.
     Always reads BRAIN.md first per POS contract.
-    Now also reports last sleep cycle status for honest observability.
+    Reports last regular sleep + last Deep Sleep (BES) for honest observability + compute monitoring.
     """
     try:
         vault = get_vault()
         _ = vault.read_brain_md()
         status = get_last_sleep_status(vault)
+        deep_status = get_last_deep_sleep_status(vault)
         base = "✅ engram-mcp healthy. BRAIN.md readable + vault layer active (8-folder, never-delete, logging). HTTP/stdio both supported."
         if status:
             base += f"\nLast sleep: {status['filename']} (scope={status['scope']}, passes={status['passes']})"
         else:
             base += "\nLast sleep: none recorded yet."
+        if deep_status:
+            base += f"\nLast Deep Sleep (BES): {deep_status['filename']} (scope={deep_status['scope']}, gen={deep_status['generations']}, pop={deep_status['population_size']})"
+        else:
+            base += "\nLast Deep Sleep (BES): none yet (optional advanced mode)."
         return base
     except Exception as e:
         return f"❌ engram-mcp unhealthy: {e}"
@@ -338,6 +350,50 @@ def engram_trigger_sleep(n_passes: int = 3, scope: str = "nightly", dry_run: boo
         return f"❌ SLEEP CYCLE PARAM ERROR: {e} (n_passes 1-5; scope in nightly/manual/ad-hoc/weekly)"
     except Exception as e:
         return f"❌ ERROR in sleep cycle: {e}"
+
+
+@mcp.tool()
+def engram_trigger_deep_sleep(
+    generations: int = 4,
+    population_size: int = 6,
+    scope: str = "deep-manual",
+    dry_run: bool = False,
+) -> str:
+    """
+    Trigger Deep Sleep powered by Bidirectional Evolutionary Search (BES).
+
+    Forward evolutionary recombination (crossover, translocation, combination, deletion)
+    of daily trajectories + backward subgoal decomposition for dense partial-progress scoring.
+    Produces higher-quality consolidated artifacts than regular sleep.
+
+    Always reads BRAIN.md first. Full POS rule compliance (vault layer, never-delete,
+    proposals only for BRAIN.md, logging). Writes to 04 - GENERATED/consolidated/deep/.
+
+    More compute-heavy — intended for manual trigger or weekend scheduled runs.
+    Default nightly remains the fast engram_trigger_sleep.
+
+    Args:
+        generations: 2-8 (default 4). More = deeper evolution.
+        population_size: 3-12 (default 6). Larger explores more combinations.
+        scope: "deep-manual" | "deep-weekend" | "deep-adhoc" | "deep-scheduled"
+        dry_run: if True, full synthesis + log only (no artifact written)
+    """
+    try:
+        vault = get_vault()
+        result = trigger_deep_sleep_cycle(
+            vault,
+            generations=generations,
+            population_size=population_size,
+            scope=scope,
+            dry_run=dry_run,
+        )
+        return result
+    except VaultError as e:
+        return f"❌ VAULT RULE VIOLATION (deep sleep BES): {e}"
+    except ValueError as e:
+        return f"❌ DEEP SLEEP PARAM ERROR: {e} (generations 2-8; pop 3-12; valid deep scope)"
+    except Exception as e:
+        return f"❌ ERROR in deep sleep (BES): {e}"
 
 
 # ============================================================

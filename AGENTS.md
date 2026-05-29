@@ -53,6 +53,7 @@ See `engram-mcp/README.md` ("Production (VPS, Docker Compose + systemd — No N8
 - `grok mcp list` / `grok mcp doctor engram-mcp`
 - Invoke tools directly in prompts: "Call engram_generate_morning_briefing via the registered MCP server"
 - Sleep cycle (manual): "Call engram_trigger_sleep with n_passes=2, scope=manual"
+- Deep Sleep BES (advanced): "Call engram_trigger_deep_sleep with generations=4, population_size=6, scope=deep-manual" (optional, higher quality evolutionary consolidation)
 - Daily note: `01 - ACTIVE/daily/YYYY-MM-DD.md`
 - First live artifact: `04 - GENERATED/briefings/2026-05-21-morning.md`
 - Consolidated memory: `04 - GENERATED/consolidated/` (from nightly sleep)

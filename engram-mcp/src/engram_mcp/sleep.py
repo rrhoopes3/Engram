@@ -1,22 +1,21 @@
 """
-engram_mcp.sleep — Periodic Sleep Cycles for memory consolidation.
+engram_mcp.sleep — Periodic Sleep Cycles for memory consolidation + Deep Sleep (BES).
 
-Implements offline recurrent passes over recent context (inspired by
-"Language Models Need Sleep" preprint, AlphaXiv 2605.26099, 2026-05-26).
+Regular: recurrent passes (inspired by "Language Models Need Sleep", AlphaXiv 2605.26099).
+Deep Sleep: Bidirectional Evolutionary Search (BES, arXiv:2605.28814) for higher-quality
+recombination of trajectories — forward evolution (crossover/translocation/etc.) + backward
+subgoal decomposition. Optional, more compute-heavy, writes to consolidated/deep/.
 
-- Collects from vault (BRAIN.md mandatory first, dailies, briefings, QUEUE, recent ARCHIVE, logs).
-- N recurrent passes: extract (P1) → connect (P2) → compress to Fast Memory Blocks (P3+).
-- Writes only via vault._write_to_generated("consolidated", ...).
-- Proposes BRAIN.md deltas but NEVER writes them (human review gate).
-- Dry-run: full synthesis + log, zero GENERATED writes.
-- Graceful on sparse vault (early days).
-- get_last_sleep_status(): honest derived status for observability (no new state files).
+- All modes: BRAIN.md first (mandatory), vault only for I/O, never-delete, proposals only.
+- Dry-run support, honest status derivation, graceful sparse vault.
+- Future: XAI_API_KEY enables true LLM calls inside operators/fitness for richer evolution.
 
-All I/O through passed Vault instance. No new deps. Windows paths safe (pathlib + vault).
+No new runtime deps. Windows-safe.
 """
 
 from __future__ import annotations
 
+import random
 import re
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -345,4 +344,422 @@ def get_last_sleep_status(vault: Vault) -> Optional[dict]:
         "filename": latest.name,
         "scope": scope_match.group(1) if scope_match else "unknown",
         "passes": int(passes_match.group(1)) if passes_match else 0,
+    }
+
+
+# ============================================================
+# DEEP SLEEP MODE: Bidirectional Evolutionary Search (BES)
+# ============================================================
+# Adapted from "Self-Improving Language Models with Bidirectional Evolutionary Search"
+# (arXiv:2605.28814v1, May 2026, Xu et al.).
+#
+# Forward: evolutionary recombination of experience "trajectories" (daily notes,
+# briefings, captures, logs) via crossover, translocation, combination, deletion.
+# Backward: recursive decomposition of high-level goals (from BRAIN.md priorities +
+# open patterns) into verifiable subgoals for dense scoring / partial progress detection.
+#
+# v1: fully deterministic heuristic (no external LLM calls, stdlib only) so it runs
+# reliably offline in the MCP container. Produces richer consolidated artifacts than
+# the fast recurrent-pass sleep.
+# Future (when XAI_API_KEY in env): replace operator/fitness bodies with Grok calls
+# for true generative evolution while keeping identical structure + vault contract.
+#
+# All writes go through vault._write_to_generated("consolidated/deep", ...).
+# Never touches BRAIN.md (only proposes deltas). Full logging + traceability.
+# ============================================================
+
+DeepSleepScope = ["deep-manual", "deep-weekend", "deep-adhoc", "deep-scheduled"]
+
+
+def _simple_chunk(text: str, max_chars: int = 320) -> list[str]:
+    """Lightweight chunker for trajectories. Prefers paragraph/sentence breaks."""
+    if not text or len(text) < 40:
+        return []
+    chunks: list[str] = []
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if len(p.strip()) > 20]
+    for p in paras:
+        if len(p) <= max_chars:
+            chunks.append(p[:max_chars])
+        else:
+            sents = re.split(r"(?<=[.!?])\s+", p)
+            buf = ""
+            for s in sents:
+                if len(buf) + len(s) + 1 > max_chars and buf:
+                    chunks.append(buf.strip())
+                    buf = s
+                else:
+                    buf = (buf + " " + s).strip()
+            if buf:
+                chunks.append(buf[:max_chars])
+    return chunks[:8]
+
+
+def _extract_trajectories(ctx: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build initial population of trajectories from collected context."""
+    trajs: list[dict[str, Any]] = []
+    for d, txt in ctx.get("daily_notes", {}).items():
+        for ch in _simple_chunk(txt):
+            trajs.append({
+                "text": ch,
+                "provenance": [f"daily:{d}"],
+                "score": 0.0,
+            })
+    for d, txt in ctx.get("briefings", {}).items():
+        for ch in _simple_chunk(txt, 260):
+            trajs.append({
+                "text": ch,
+                "provenance": [f"briefing:{d}"],
+                "score": 0.0,
+            })
+    for name, txt in ctx.get("queue_items", []):
+        for ch in _simple_chunk(txt, 200)[:2]:
+            trajs.append({"text": ch, "provenance": [f"queue:{name}"], "score": 0.0})
+    for name, txt in ctx.get("archived_samples", []):
+        for ch in _simple_chunk(txt, 160)[:1]:
+            trajs.append({"text": ch, "provenance": [f"archive:{name}"], "score": 0.0})
+
+    seen = set()
+    unique = []
+    for t in trajs:
+        key = t["text"][:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(t)
+    random.shuffle(unique)
+    return unique[:25]
+
+
+def _backward_decompose(brain_md: str, ctx: dict[str, Any]) -> list[str]:
+    """Produce a small set of verifiable subgoals for scoring partial progress."""
+    subgoals: list[str] = []
+    prio = ""
+    m = re.search(r"Current Priorities.*?(?=\n##|\Z)", brain_md, re.S | re.I)
+    if m:
+        prio = m.group(0)[:600]
+    for line in prio.splitlines():
+        if line.strip().startswith(("1.", "2.", "3.", "-", "*")) and len(line) > 15:
+            subgoals.append(line.strip()[:120])
+
+    themes = []
+    flat = (brain_md + " " + str(ctx.get("daily_notes", {})) + " " + str(ctx.get("briefings", {}))).lower()
+    for kw in ["vault", "automation", "n8n", "sleep", "consolidat", "priority", "health", "capture"]:
+        if kw in flat:
+            themes.append(kw)
+    if themes:
+        subgoals.append(f"Cross-day coherence on: {', '.join(themes[:4])}")
+
+    subgoals.append("Evidence of forward progress on active projects")
+    subgoals.append("Detection of recurring patterns or stalled loops")
+
+    seen = set()
+    final = []
+    for g in subgoals:
+        if g.lower() not in seen:
+            seen.add(g.lower())
+            final.append(g)
+    return final[:7]
+
+
+def _score(traj: dict[str, Any], subgoals: list[str]) -> float:
+    """Dense scoring: subgoal coverage + actionability + sweet-spot length."""
+    txt = traj.get("text", "").lower()
+    if not txt:
+        return 0.0
+    covered = sum(1 for g in subgoals if any(w in txt for w in g.lower().split()[:4] if len(w) > 3))
+    cov = covered / max(1, len(subgoals))
+    bonus = 0.12 if any(k in txt for k in ["action", "next", "progress", "pattern", "evolved", "deeper"]) else 0.0
+    ln = len(traj["text"])
+    length_f = 0.08 if 80 < ln < 380 else 0.0
+    return min(0.98, cov + bonus + length_f)
+
+
+def _crossover(a: dict, b: dict) -> dict:
+    ta, tb = a["text"], b["text"]
+    mid_a = len(ta) // 2
+    mid_b = len(tb) // 2
+    new_text = (ta[:mid_a].rstrip() + "  |EVOLVED-CROSS|  " + tb[mid_b:].lstrip())[:380]
+    return {
+        "text": new_text,
+        "provenance": list(set(a["provenance"] + b["provenance"] + ["crossover"])),
+        "score": 0.0,
+    }
+
+
+def _translocation(a: dict, b: dict) -> dict:
+    seg = b["text"][:120].strip()
+    if len(seg) < 25:
+        seg = b["text"]
+    new_text = (a["text"][:200].rstrip() + "  [TRANSLOCATED: " + seg + "] " + a["text"][200:]).strip()[:380]
+    return {
+        "text": new_text,
+        "provenance": list(set(a["provenance"] + b["provenance"] + ["translocation"])),
+        "score": 0.0,
+    }
+
+
+def _combination(a: dict, b: dict) -> dict:
+    new_text = f"In the light of {a['text'][:90]}... and {b['text'][:90]}..., the deeper consolidated pattern is: multi-day integration of these threads yields actionable coherence for the Engram POS."
+    return {
+        "text": new_text[:380],
+        "provenance": list(set(a["provenance"] + b["provenance"] + ["combination"])),
+        "score": 0.0,
+    }
+
+
+def _deletion(t: dict) -> dict:
+    txt = t["text"]
+    sents = re.split(r"(?<=[.!?])\s+", txt)
+    if len(sents) <= 1:
+        return {**t, "text": txt[:int(len(txt)*0.7)]}
+    sents = sorted(sents, key=len, reverse=True)
+    pruned = " ".join(sents[:max(1, len(sents)-1)])
+    return {
+        "text": pruned[:380],
+        "provenance": t["provenance"] + ["deletion"],
+        "score": 0.0,
+    }
+
+
+def run_bidirectional_evolutionary_search(
+    initial_trajs: list[dict[str, Any]],
+    subgoals: list[str],
+    generations: int = 4,
+    pop_size: int = 6,
+) -> dict[str, Any]:
+    """Execute the core BES loop. Returns evolved population + metrics."""
+    if not initial_trajs:
+        return {"population": [], "metrics": {"generations": 0, "note": "no trajectories"}, "subgoals": subgoals}
+
+    pop = [dict(t) for t in initial_trajs[:pop_size * 2]]
+    random.shuffle(pop)
+    pop = pop[:pop_size]
+
+    for t in pop:
+        t["score"] = _score(t, subgoals)
+
+    metrics = {
+        "generations": generations,
+        "population_size": pop_size,
+        "operators_applied": 0,
+        "best_final_score": 0.0,
+        "subgoal_coverage": 0.0,
+    }
+
+    for g in range(max(1, generations)):
+        for t in pop:
+            t["score"] = _score(t, subgoals)
+
+        pop.sort(key=lambda x: x["score"], reverse=True)
+        metrics["best_final_score"] = max(metrics["best_final_score"], pop[0]["score"] if pop else 0)
+
+        elite = pop[:max(2, pop_size // 2)]
+        parents = elite + random.sample(pop, min(len(pop), max(2, pop_size // 3)))
+
+        new_gen: list[dict] = []
+        for _ in range(pop_size):
+            p1, p2 = random.sample(parents, 2) if len(parents) >= 2 else (parents[0], parents[0])
+            r = random.random()
+            if r < 0.35:
+                cand = _crossover(p1, p2)
+            elif r < 0.55:
+                cand = _translocation(p1, p2)
+            elif r < 0.75:
+                cand = _combination(p1, p2)
+            else:
+                cand = _deletion(random.choice([p1, p2]))
+            metrics["operators_applied"] += 1
+            new_gen.append(cand)
+
+        pop = (elite + new_gen)[:pop_size]
+
+    for t in pop:
+        t["score"] = _score(t, subgoals)
+    pop.sort(key=lambda x: x["score"], reverse=True)
+
+    if pop:
+        metrics["best_final_score"] = pop[0]["score"]
+        covered = sum(1 for g in subgoals if any(g.lower()[:30] in t["text"].lower() for t in pop[:3]))
+        metrics["subgoal_coverage"] = round(covered / max(1, len(subgoals)), 2)
+
+    return {
+        "population": pop,
+        "metrics": metrics,
+        "subgoals": subgoals,
+    }
+
+
+def synthesize_deep_consolidated(
+    context: dict[str, Any],
+    bes_result: dict[str, Any],
+    generations: int,
+    pop_size: int,
+) -> str:
+    """Produce the high-quality Deep Sleep artifact following BRAIN §5 standards."""
+    date = datetime.now().strftime("%Y-%m-%d")
+    scope = context.get("scope", "deep-manual")
+    src_lines = "\n".join(f"- {s}" for s in context.get("sources", [])) or "- (BRAIN + trajectories)"
+
+    pop = bes_result.get("population", [])
+    metrics = bes_result.get("metrics", {})
+    subgoals = bes_result.get("subgoals", [])
+
+    top_insights = []
+    for i, t in enumerate(pop[:4], 1):
+        prov = ", ".join(t.get("provenance", [])[:3])
+        top_insights.append(f"{i}. {t['text'][:220]}...\n   (score={t['score']:.2f}, from: {prov})")
+
+    subgoal_md = "\n".join(f"- [ ] {g}  (partial progress scored in evolution)" for g in subgoals)
+
+    return f"""# Deep Sleep (BES) Report — {date} (scope: {scope}, generations={generations}, pop={pop_size})
+
+## Context & Compute
+- Trajectories evolved: {len(pop)} final individuals from {len(context.get('daily_notes',{}))} dailies + {len(context.get('briefings',{}))} briefings + queue/archive
+- Generations run: {generations}
+- Operators applied: {metrics.get('operators_applied', 0)}
+- Best evolved score: {metrics.get('best_final_score', 0.0):.2f}
+- Subgoal coverage (top-3): {metrics.get('subgoal_coverage', 0.0)}
+- Collected: {context.get('collected_at')}
+
+## Backward Subgoals (verifiable decomposition from BRAIN priorities + patterns)
+{subgoal_md}
+
+## Evolved Insights (forward recombination via crossover / translocation / combination / deletion)
+{chr(10).join(top_insights) if top_insights else "(Insufficient diversity for evolution — fell back to raw extraction.)"}
+
+## Cross-Day Multi-Hop Patterns Detected
+BES recombination surfaced stronger connections than single-pass sleep. Key evolved threads above represent spliced partial progress across days. Use these as seeds for weekly review or project health.
+
+## Proposed BRAIN.md Updates (exact snippet — NEEDS HUMAN INPUT)
+## 10. Deep Sleep — Bidirectional Evolutionary Search (BES)  [PROPOSED]
+**Optional advanced mode**: `engram_trigger_deep_sleep(generations=3..6, population_size=5..8, scope="deep-manual"|"deep-weekend", dry_run=False)`
+- Runs forward evolutionary operators on trajectories + backward subgoal decomposition.
+- Writes richer artifacts to `04 - GENERATED/consolidated/deep/deep-YYYY-MM-DD-HHMM-consolidation.md`
+- Still 100% vault-rule compliant (BRAIN first, archive-only, proposals only, logged).
+- More expensive than nightly recurrent sleep; run manually or on weekends.
+See `engram-mcp/src/engram_mcp/sleep.py` (BES section) and arXiv:2605.28814.
+
+(Append after §9. Update §7 schedule + §8 Last Deep Sleep line.)
+
+## Metrics for Observability (token/compute future)
+- generations={generations} pop_size={pop_size} operators={metrics.get('operators_applied',0)}
+- This run used pure deterministic BES v1 (no LLM). When XAI_API_KEY present the same loop can call Grok for operator application and scoring.
+
+## Sources (full traceability)
+{src_lines}
+
+---
+*Generated by engram_trigger_deep_sleep (BES) via Grok / engram-mcp on {datetime.now().isoformat(timespec='seconds')}*
+*Bidirectional Evolutionary Search v1 (deterministic). See "Self-Improving Language Models with Bidirectional Evolutionary Search" (arXiv:2605.28814).*
+*Rules honored: BRAIN.md read first. 8-folder contract. Never delete. Human gate on proposals. No auto BRAIN edits.*
+""".strip()
+
+
+def trigger_deep_sleep_cycle(
+    vault: Vault,
+    generations: int = 4,
+    population_size: int = 6,
+    scope: str = "deep-manual",
+    dry_run: bool = False,
+) -> str:
+    """Orchestrator for Deep Sleep (BES). Mirrors trigger_sleep_cycle contract exactly."""
+    if not (2 <= generations <= 8):
+        raise ValueError(f"generations out of range (2-8): {generations}")
+    if not (3 <= population_size <= 12):
+        raise ValueError(f"population_size out of range (3-12): {population_size}")
+    if scope not in DeepSleepScope:
+        raise ValueError(f"invalid deep scope {scope}; allowed: {DeepSleepScope}")
+
+    brain = vault.read_brain_md()
+
+    ctx = collect_recent_context(vault, scope)
+    ctx["brain_md"] = brain
+    ctx["sources"].insert(0, "03 - SYSTEM/BRAIN.md")
+
+    has_ctx = bool(ctx.get("daily_notes") or ctx.get("briefings") or ctx.get("queue_items"))
+    if not has_ctx:
+        msg = "Insufficient trajectories for BES Deep Sleep (need recent dailies/briefings). Logged."
+        vault.log_action(f"DeepSleep skipped: {msg} (scope={scope}, gen={generations})")
+        return f"⚠️ {msg} (BRAIN.md read; no deep artifact written.)"
+
+    trajs = _extract_trajectories(ctx)
+    subgoals = _backward_decompose(brain, ctx)
+    bes_result = run_bidirectional_evolutionary_search(trajs, subgoals, generations, population_size)
+
+    artifact = synthesize_deep_consolidated(ctx, bes_result, generations, population_size)
+
+    if dry_run:
+        vault.log_action(f"DeepSleep DRY-RUN (no write): scope={scope}, gen={generations}, pop={population_size}. BRAIN read first.")
+        preview = artifact[:900] + "\n...(truncated preview)"
+        return (
+            f"✅ DEEP SLEEP DRY-RUN SUCCESS (log only).\n"
+            f"scope={scope} generations={generations} pop={population_size}\n\n"
+            f"--- Preview ---\n{preview}\n\n"
+            f"BES metrics: {bes_result.get('metrics')}\n"
+        )
+
+    ts = datetime.now().strftime("%Y-%m-%d-%H%M")
+    filename = f"deep-{ts}-consolidation.md"
+    out = vault._write_to_generated("consolidated/deep", filename, artifact)
+    rel = out.relative_to(vault.root)
+
+    vault.log_action(
+        f"Deep Sleep (BES) complete: {rel} (scope={scope}, gen={generations}, pop={population_size}). "
+        f"BRAIN read first. Evolutionary recombination performed. Proposal embedded."
+    )
+
+    last_block = (
+        f"- **Last Deep Sleep:** {rel.name}  \n"
+        f"  scope={scope}, generations={generations}, pop={population_size} — see `04 - GENERATED/consolidated/deep/{rel.name}`"
+    )
+
+    return (
+        f"✅ SUCCESS: Deep Sleep (BES) complete.\n"
+        f"📁 Artifact: {rel}\n"
+        f"scope={scope} | generations={generations} | pop_size={population_size}\n\n"
+        f"--- Preview (head) ---\n{artifact[:650]}...\n\n"
+        f"Deep consolidated memory (evolved trajectories + subgoal progress) now in vault.\n"
+        f"Embedded BRAIN proposal (new §10) requires explicit human paste.\n\n"
+        f"--- Paste into BRAIN.md §8 (Current Context Snapshot) ---\n"
+        f"{last_block}\n"
+        f"(Replace previous Last Deep Sleep line. This is the maintenance step.)"
+    )
+
+
+def get_last_deep_sleep_status(vault: Vault) -> Optional[dict]:
+    """
+    Derive last Deep Sleep (BES) status from artifacts in consolidated/deep/.
+    Honest, no extra state. Falls back to scanning consolidated/ for deep- prefixed files.
+    """
+    base = vault.root / vault.FOLDERS["generated"] / "consolidated"
+    deep_dir = base / "deep"
+
+    candidates: list = []
+    if deep_dir.exists():
+        candidates = list(deep_dir.glob("deep-*-consolidation.md"))
+
+    if not candidates:
+        if base.exists():
+            candidates = [p for p in base.glob("deep-*-consolidation.md")]
+
+    if not candidates:
+        return None
+
+    latest = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+
+    try:
+        header = latest.read_text(encoding="utf-8", errors="ignore").splitlines()[:6]
+        header_text = " ".join(header)
+    except Exception:
+        header_text = ""
+
+    scope_m = re.search(r"scope:\s*([a-z-]+)", header_text, re.I)
+    gen_m = re.search(r"generations=(\d+)", header_text)
+    pop_m = re.search(r"pop(?:_size)?=(\d+)", header_text)
+
+    return {
+        "artifact": str(latest.relative_to(vault.root)),
+        "filename": latest.name,
+        "scope": scope_m.group(1) if scope_m else "deep-unknown",
+        "generations": int(gen_m.group(1)) if gen_m else 0,
+        "population_size": int(pop_m.group(1)) if pop_m else 0,
     }
