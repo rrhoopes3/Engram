@@ -49,6 +49,7 @@ from .sleep import (
     trigger_deep_sleep_cycle,
     get_last_deep_sleep_status,
 )
+from .graph_export import export_graph_overlay_standalone, get_last_overlay_status
 
 
 # Create the MCP server using the modern FastMCP SDK (compatible with current mcp package)
@@ -309,6 +310,7 @@ def engram_health() -> str:
         _ = vault.read_brain_md()
         status = get_last_sleep_status(vault)
         deep_status = get_last_deep_sleep_status(vault)
+        overlay_status = get_last_overlay_status(vault)
         base = "✅ engram-mcp healthy. BRAIN.md readable + vault layer active (8-folder, never-delete, logging). HTTP/stdio both supported."
         if status:
             base += f"\nLast sleep: {status['filename']} (scope={status['scope']}, passes={status['passes']})"
@@ -318,6 +320,10 @@ def engram_health() -> str:
             base += f"\nLast Deep Sleep (BES): {deep_status['filename']} (scope={deep_status['scope']}, gen={deep_status['generations']}, pop={deep_status['population_size']})"
         else:
             base += "\nLast Deep Sleep (BES): none yet (optional advanced mode)."
+        if overlay_status:
+            base += f"\nLast graph overlay: {overlay_status['filename']} (nodes={overlay_status['node_count']}, edges={overlay_status['edge_count']})"
+        else:
+            base += "\nLast graph overlay: none yet (run sleep or engram_export_graph_overlay)."
         return base
     except Exception as e:
         return f"❌ engram-mcp unhealthy: {e}"
@@ -394,6 +400,35 @@ def engram_trigger_deep_sleep(
         return f"❌ DEEP SLEEP PARAM ERROR: {e} (generations 2-8; pop 3-12; valid deep scope)"
     except Exception as e:
         return f"❌ ERROR in deep sleep (BES): {e}"
+
+
+@mcp.tool()
+def engram_export_graph_overlay(
+    mode: str = "incremental",  # incremental | full
+    include_archived: bool = False,
+    dry_run: bool = False,
+) -> str:
+    """
+    Standalone graph overlay export (Phase 1 bridge).
+    Rebuilds nodes/edges from recent context (or broader for mode=full, capped).
+    Always reads BRAIN.md first. Writes to 04 - GENERATED/graph-export/ (JSON + manifest.md).
+    Use after manual vault changes or for N8N post-sleep step. Dry-run for preview.
+
+    The overlay JSON follows engram-graph-overlay-v1 schema (stable node IDs, sleep_synthesis
+    + bes_surprise edges, folder clusters, priority signals). Intended for LLM Wiki sidecar.
+    """
+    try:
+        vault = get_vault()
+        if mode not in ("incremental", "full"):
+            return "❌ PARAM ERROR: mode must be 'incremental' or 'full'"
+        result = export_graph_overlay_standalone(
+            vault, mode=mode, include_archived=include_archived, dry_run=dry_run
+        )
+        return result
+    except VaultError as e:
+        return f"❌ VAULT RULE VIOLATION (graph overlay): {e}"
+    except Exception as e:
+        return f"❌ ERROR in graph overlay export: {e}"
 
 
 # ============================================================

@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Union
@@ -44,7 +45,7 @@ class Vault:
         "archive": "07 - ARCHIVE",
     }
 
-    GENERATED_SUBS = ["briefings", "summaries", "analyses", "drafts", "consolidated"]
+    GENERATED_SUBS = ["briefings", "summaries", "analyses", "drafts", "consolidated", "graph-export"]
 
     # Deep Sleep (BES) and future advanced modes may write to consolidated/deep/
     # for organized higher-quality artifacts. Explicitly allowlisted below.
@@ -166,6 +167,33 @@ class Vault:
         self._ensure_parent(target)
         target.write_text(content, encoding="utf-8")
         self.log_action(f"Wrote to GENERATED/{sub}: {target.relative_to(self.root)}")
+        return target
+
+    def _write_json_to_generated(self, sub: str, filename: str, payload: dict) -> Path:
+        """
+        Parallel safe writer for machine-readable JSON overlays (Phase 1 graph bridge).
+        Enforces v1 restriction: sub MUST be exactly 'graph-export'.
+        filename must end with .json (no path separators).
+        Pretty-prints UTF-8 JSON + trailing newline. Full containment + logging.
+        """
+        if sub != "graph-export":
+            raise VaultError(f"JSON writer v1 restricted to 'graph-export' sub only. Got: {sub}")
+        if "/" in filename or "\\" in filename or ".." in filename:
+            raise VaultError(f"Unsafe filename for GENERATED JSON write: {filename}")
+        if not filename.endswith(".json"):
+            raise VaultError("Generated JSON files must end with .json")
+
+        rel = f"{self.FOLDERS['generated']}/{sub}/{filename}"
+        target = self._safe_path(rel)
+
+        approved_dir = (self.root / self.FOLDERS["generated"] / sub).resolve()
+        if not target.resolve().is_relative_to(approved_dir):
+            raise VaultError(f"JSON write containment violation: {target} escaped approved dir {approved_dir}")
+
+        self._ensure_parent(target)
+        json_str = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+        target.write_text(json_str, encoding="utf-8")
+        self.log_action(f"Wrote JSON to GENERATED/{sub}: {target.relative_to(self.root)}")
         return target
 
     def write_briefing(self, date: str, content: str) -> Path:

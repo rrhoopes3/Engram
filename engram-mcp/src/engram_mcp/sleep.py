@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 
 from .vault import Vault, VaultError
+from .graph_export import export_sleep_graph_overlay, export_deep_graph_overlay
 
 
 ALLOWED_SCOPES = ["nightly", "manual", "ad-hoc", "weekly"]
@@ -286,15 +287,19 @@ def trigger_sleep_cycle(vault: Vault, n_passes: int = 3, scope: str = "nightly",
 
     vault.log_action(f"Sleep cycle complete: {rel} (scope={scope}, n_passes={n_passes}). BRAIN read first. Proposal embedded (NEEDS HUMAN INPUT for any BRAIN edit). Fast memory consolidated.")
 
+    # Phase 1 graph bridge hook (after md, before return; respects dry_run/sparse inside)
+    overlay_rel = export_sleep_graph_overlay(vault, ctx, passes, str(rel), dry_run=False)
+
     # Honest status block ready for human to paste into BRAIN.md §8
     last_sleep_block = (
         f"- **Last Sleep:** {rel.name}  \n"
         f"  scope={scope}, passes={n_passes} — see `04 - GENERATED/consolidated/{rel.name}`"
     )
 
+    overlay_note = f"\n📊 Graph overlay: {overlay_rel}" if overlay_rel else ""
     return (
         f"✅ SUCCESS: Sleep Cycle complete.\n"
-        f"📁 Artifact: {rel}\n"
+        f"📁 Artifact: {rel}{overlay_note}\n"
         f"scope={scope} | passes={n_passes}\n\n"
         f"--- Preview (head) ---\n{artifact[:750]}...\n\n"
         f"Consolidated fast memory now in vault. Embedded BRAIN proposal requires explicit human paste (no auto-edit performed). "
@@ -707,14 +712,18 @@ def trigger_deep_sleep_cycle(
         f"BRAIN read first. Evolutionary recombination performed. Proposal embedded."
     )
 
+    # Phase 1 graph bridge hook (BES surprise edges included when multi-provenance)
+    overlay_rel = export_deep_graph_overlay(vault, ctx, bes_result, str(rel), dry_run=False)
+
     last_block = (
         f"- **Last Deep Sleep:** {rel.name}  \n"
         f"  scope={scope}, generations={generations}, pop={population_size} — see `04 - GENERATED/consolidated/deep/{rel.name}`"
     )
 
+    overlay_note = f"\n📊 Graph overlay: {overlay_rel}" if overlay_rel else ""
     return (
         f"✅ SUCCESS: Deep Sleep (BES) complete.\n"
-        f"📁 Artifact: {rel}\n"
+        f"📁 Artifact: {rel}{overlay_note}\n"
         f"scope={scope} | generations={generations} | pop_size={population_size}\n\n"
         f"--- Preview (head) ---\n{artifact[:650]}...\n\n"
         f"Deep consolidated memory (evolved trajectories + subgoal progress) now in vault.\n"

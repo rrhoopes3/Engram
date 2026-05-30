@@ -119,7 +119,15 @@ All outputs from the engram-mcp server / Grok (briefings, summaries, analyses, d
 See `engram-mcp/src/engram_mcp/sleep.py` and the N8N workflow `07-nightly-sleep-cycle.json`.
 
 ---
+## 10. Graph Bridge (Engram × LLM Wiki)
 
+**Purpose:** Engram exports graph overlays after sleep/deep sleep to `04 - GENERATED/graph-export/`. The Phase 2 bridge script (`03 - SYSTEM/scripts/apply-engram-graph-overlay.py`) turns those JSONs into clean wikilink notes (`overlay-edges.md`) that can be re-ingested into LLM Wiki so sleep/BES connections become visible in the spatial graph.
+
+**Flow:** `engram_trigger_sleep` → overlay JSON → (optional) `apply-engram-graph-overlay.py --write` → re-ingest `overlay-edges.md` into LLM Wiki.
+
+**Rules:** Overlays and generated edge notes are **suggestions only** (NEEDS HUMAN INPUT). Never auto-edit source notes. LLM Wiki is the read/explore frontend; Engram remains the operational + intelligence backend. Run the bridge script manually or wire it into N8N.
+
+**Current artifacts:** See `04 - GENERATED/graph-export/manifest.md` and `overlay-edges.md`.
 **This file is the brain stem. Treat it with care. Read it first, always.**
 
 ---
