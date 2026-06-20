@@ -442,9 +442,10 @@ def export_graph_overlay_standalone(
     mode: str = "incremental",
     include_archived: bool = False,
     dry_run: bool = False,
+    brain_md: str | None = None,
 ) -> str:
     """Implementation for engram_export_graph_overlay MCP tool."""
-    _ = vault.read_brain_md()  # contract
+    brain = brain_md if brain_md is not None else vault.read_brain_md()
     from .sleep import collect_recent_context
 
     if mode == "full":
@@ -452,7 +453,7 @@ def export_graph_overlay_standalone(
     else:
         ctx = collect_recent_context(vault, "manual")
 
-    ctx["brain_md"] = vault.read_brain_md()
+    ctx["brain_md"] = brain
     if "03 - SYSTEM/BRAIN.md" not in ctx.get("sources", []):
         ctx["sources"].insert(0, "03 - SYSTEM/BRAIN.md")
 

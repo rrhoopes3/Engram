@@ -248,15 +248,21 @@ Sleep gives the POS recurrent offline compression. Wake: fresh reads + this arti
 """.strip()
 
 
-def trigger_sleep_cycle(vault: Vault, n_passes: int = 3, scope: str = "nightly", dry_run: bool = False) -> str:
-    """Core orchestrator. Always reads BRAIN first. Returns success string + paths or error/NEEDS HUMAN."""
+def trigger_sleep_cycle(
+    vault: Vault,
+    n_passes: int = 3,
+    scope: str = "nightly",
+    dry_run: bool = False,
+    brain_md: str | None = None,
+) -> str:
+    """Core orchestrator. Always reads BRAIN first (unless brain_md pre-read by caller). Returns success string + paths or error/NEEDS HUMAN."""
     if not (1 <= n_passes <= 5):
         raise ValueError(f"n_passes out of range (1-5): {n_passes}")
     if scope not in ALLOWED_SCOPES:
         raise ValueError(f"invalid scope {scope}; allowed: {ALLOWED_SCOPES}")
 
-    # NON-NEGOTIABLE
-    brain = vault.read_brain_md()
+    # NON-NEGOTIABLE — use pre-read content when caller already logged BRAIN-first
+    brain = brain_md if brain_md is not None else vault.read_brain_md()
     ctx = collect_recent_context(vault, scope)
     ctx["brain_md"] = brain
     ctx["sources"].insert(0, "03 - SYSTEM/BRAIN.md")
@@ -665,6 +671,7 @@ def trigger_deep_sleep_cycle(
     population_size: int = 6,
     scope: str = "deep-manual",
     dry_run: bool = False,
+    brain_md: str | None = None,
 ) -> str:
     """Orchestrator for Deep Sleep (BES). Mirrors trigger_sleep_cycle contract exactly."""
     if not (2 <= generations <= 8):
@@ -674,7 +681,8 @@ def trigger_deep_sleep_cycle(
     if scope not in DeepSleepScope:
         raise ValueError(f"invalid deep scope {scope}; allowed: {DeepSleepScope}")
 
-    brain = vault.read_brain_md()
+    # NON-NEGOTIABLE — use pre-read content when caller already logged BRAIN-first
+    brain = brain_md if brain_md is not None else vault.read_brain_md()
 
     ctx = collect_recent_context(vault, scope)
     ctx["brain_md"] = brain

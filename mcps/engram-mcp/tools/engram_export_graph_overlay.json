@@ -1,0 +1,25 @@
+{
+  "name": "engram_export_graph_overlay",
+  "description": "\n    Standalone graph overlay export (Phase 1 bridge).\n    Rebuilds nodes/edges from recent context (or broader for mode=full, capped).\n    Always reads BRAIN.md first. Writes to 04 - GENERATED/graph-export/ (JSON + manifest.md).\n    Use after manual vault changes or for N8N post-sleep step. Dry-run for preview.\n\n    The overlay JSON follows engram-graph-overlay-v1 schema (stable node IDs, sleep_synthesis\n    + bes_surprise edges, folder clusters, priority signals). Intended for LLM Wiki sidecar.\n    ",
+  "inputSchema": {
+    "properties": {
+      "mode": {
+        "default": "incremental",
+        "title": "Mode",
+        "type": "string"
+      },
+      "include_archived": {
+        "default": false,
+        "title": "Include Archived",
+        "type": "boolean"
+      },
+      "dry_run": {
+        "default": false,
+        "title": "Dry Run",
+        "type": "boolean"
+      }
+    },
+    "title": "engram_export_graph_overlayArguments",
+    "type": "object"
+  }
+}

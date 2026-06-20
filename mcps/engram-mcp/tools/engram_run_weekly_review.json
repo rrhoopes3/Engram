@@ -1,0 +1,9 @@
+{
+  "name": "engram_run_weekly_review",
+  "description": "Weekly review + BRAIN.md update (stub).",
+  "inputSchema": {
+    "properties": {},
+    "title": "engram_run_weekly_reviewArguments",
+    "type": "object"
+  }
+}

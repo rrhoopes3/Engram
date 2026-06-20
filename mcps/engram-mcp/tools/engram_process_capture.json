@@ -1,0 +1,9 @@
+{
+  "name": "engram_process_capture",
+  "description": "\n    Capture Processor (v1 with real filing).\n    - Always reads BRAIN.md first (enforced by vault).\n    - Lists items in 00 - CAPTURE/.\n    - Basic keyword heuristic classification (TASK/IDEA/REFERENCE/NOTE/EVENT).\n    - **Real filing**: writes classified content to the correct destination folder\n      (05-QUEUE/ for TASK/IDEA as TASK-*/IDEA-* , 02-RESOURCES/references/ for ref/note,\n       06-CALENDAR/events/ for events) using vault.write_file.\n    - Then archives the *original* from CAPTURE (never delete).\n    - Writes timestamped report to 04 - GENERATED/summaries/.\n    - Logs every action.\n    Future: replace heuristic with LLM via Grok; same filing + archive contract.\n    ",
+  "inputSchema": {
+    "properties": {},
+    "title": "engram_process_captureArguments",
+    "type": "object"
+  }
+}

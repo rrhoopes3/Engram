@@ -146,3 +146,125 @@ def test_generated_subs_enforced(minimal_vault):
     v = minimal_vault
     assert "briefings" in v.GENERATED_SUBS
     # Future writers will be forced through _write_to_generated
+
+def test_write_brain_md_always_raises(minimal_vault):
+    v = minimal_vault
+    brain_before = v.get_brain_path().read_bytes()
+    with pytest.raises(VaultError, match="human-gate-only"):
+        v.write_brain_md("# Attempted auto-edit")
+    assert v.get_brain_path().read_bytes() == brain_before
+
+
+@pytest.mark.parametrize(
+    "path_variant,expected_match",
+    [
+        ("03 - SYSTEM/BRAIN.md", "Protected path write blocked"),
+        ("03 - SYSTEM\\BRAIN.md", "Protected path write blocked"),
+        ("./03 - SYSTEM/BRAIN.md", "Protected path write blocked"),
+        ("03 - SYSTEM//BRAIN.md", "Protected path write blocked"),
+        ("03 - system/brain.md", "Protected path write blocked"),
+        ("02 - RESOURCES/../03 - SYSTEM/BRAIN.md", "Unsafe relative path"),
+    ],
+)
+def test_brain_md_write_blocked_variants(minimal_vault, path_variant, expected_match):
+    v = minimal_vault
+    brain_before = v.get_brain_path().read_bytes()
+    with pytest.raises(VaultError, match=expected_match):
+        v.write_file(path_variant, "# sneaky edit")
+    assert v.get_brain_path().read_bytes() == brain_before
+
+
+@pytest.mark.parametrize(
+    "path_variant",
+    [
+        "03 - SYSTEM/BRAIN.md",
+        "./03 - SYSTEM/BRAIN.md",
+        "03 - SYSTEM//BRAIN.md",
+        "03 - system/brain.md",
+    ],
+)
+def test_archive_protected_brain_blocked_variants(minimal_vault, path_variant):
+    v = minimal_vault
+    brain_before = v.get_brain_path().read_bytes()
+    with pytest.raises(VaultError, match="Protected path archive blocked"):
+        v.archive_file(path_variant, reason="must-not-archive")
+    assert v.get_brain_path().read_bytes() == brain_before
+
+
+def test_protected_paths_derived_from_folders():
+    paths = Vault.protected_paths()
+    system = Vault.FOLDERS["system"]
+    assert f"{system}/BRAIN.md" in paths
+    assert f"{system}/logs/system-log.md" in paths
+
+
+def test_system_log_write_blocked(minimal_vault):
+    v = minimal_vault
+    log_path = v.root / "03 - SYSTEM" / "logs" / "system-log.md"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("- **2026-01-01** — original entry\n", encoding="utf-8")
+    before = log_path.read_bytes()
+    with pytest.raises(VaultError, match="Protected path write blocked"):
+        v.write_file("03 - SYSTEM/logs/system-log.md", "truncated audit log")
+    assert log_path.read_bytes() == before
+
+
+def test_brain_md_bak_write_blocked(minimal_vault):
+    v = minimal_vault
+    brain_before = v.get_brain_path().read_bytes()
+    with pytest.raises(VaultError, match="Protected path write blocked"):
+        v.write_file("03 - SYSTEM/BRAIN.md.bak", "# backup attempt")
+    assert v.get_brain_path().read_bytes() == brain_before
+
+
+def test_archive_brain_md_bak_blocked(minimal_vault):
+    v = minimal_vault
+    bak = v.root / "03 - SYSTEM" / "BRAIN.md.bak"
+    bak.write_text("# stale backup", encoding="utf-8")
+    brain_before = v.get_brain_path().read_bytes()
+    with pytest.raises(VaultError, match="Protected path archive blocked"):
+        v.archive_file("03 - SYSTEM/BRAIN.md.bak", reason="must-not-archive")
+    assert bak.exists()
+    assert v.get_brain_path().read_bytes() == brain_before
+
+
+def test_system_folder_secrets_write_blocked(minimal_vault):
+    v = minimal_vault
+    with pytest.raises(VaultError, match="Protected path write blocked"):
+        v.write_file("03 - SYSTEM/secrets.env", "API_KEY=leaked")
+
+
+def test_logs_dir_write_blocked(minimal_vault):
+    v = minimal_vault
+    with pytest.raises(VaultError, match="Protected path write blocked"):
+        v.write_file("03 - SYSTEM/logs/capture-log.md", "# fake log overwrite")
+
+
+def test_write_brain_md_includes_reason(minimal_vault):
+    v = minimal_vault
+    with pytest.raises(VaultError, match=r"reason='weekly-review'"):
+        v.write_brain_md("# x", reason="weekly-review")
+
+
+def test_read_brain_md_silent_no_log(minimal_vault):
+    v = minimal_vault
+    v.read_brain_md(log=False)
+    assert not (v.root / "03 - SYSTEM" / "logs" / "system-log.md").exists()
+
+
+def test_archive_with_timestamp_alias(minimal_vault):
+    v = minimal_vault
+    cap_file = v.root / "00 - CAPTURE" / "alias-test.md"
+    cap_file.write_text("alias content", encoding="utf-8")
+    archived = v.archive_with_timestamp("00 - CAPTURE/alias-test.md", reason="alias-test")
+    assert archived.exists()
+    assert not cap_file.exists()
+
+
+def test_get_briefing_path(minimal_vault):
+    v = minimal_vault
+    p = v.get_briefing_path("2026-05-22")
+    assert p.name == "2026-05-22-morning.md"
+    assert "briefings" in str(p)
+    with pytest.raises(VaultError, match="Invalid date"):
+        v.get_briefing_path("not-a-date")

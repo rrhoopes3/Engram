@@ -1,0 +1,9 @@
+{
+  "name": "engram_health",
+  "description": "Lightweight health/readiness probe for N8N monitoring, Docker healthchecks, or manual verification.\n    Always reads BRAIN.md first per POS contract.\n    Reports last regular sleep + last Deep Sleep (BES) for honest observability + compute monitoring.\n    ",
+  "inputSchema": {
+    "properties": {},
+    "title": "engram_healthArguments",
+    "type": "object"
+  }
+}

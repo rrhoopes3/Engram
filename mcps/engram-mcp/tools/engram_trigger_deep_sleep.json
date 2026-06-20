@@ -1,0 +1,30 @@
+{
+  "name": "engram_trigger_deep_sleep",
+  "description": "\n    Trigger Deep Sleep powered by Bidirectional Evolutionary Search (BES).\n\n    Forward evolutionary recombination (crossover, translocation, combination, deletion)\n    of daily trajectories + backward subgoal decomposition for dense partial-progress scoring.\n    Produces higher-quality consolidated artifacts than regular sleep.\n\n    Always reads BRAIN.md first. Full POS rule compliance (vault layer, never-delete,\n    proposals only for BRAIN.md, logging). Writes to 04 - GENERATED/consolidated/deep/.\n\n    More compute-heavy \u2014 intended for manual trigger or weekend scheduled runs.\n    Default nightly remains the fast engram_trigger_sleep.\n\n    Args:\n        generations: 2-8 (default 4). More = deeper evolution.\n        population_size: 3-12 (default 6). Larger explores more combinations.\n        scope: \"deep-manual\" | \"deep-weekend\" | \"deep-adhoc\" | \"deep-scheduled\"\n        dry_run: if True, full synthesis + log only (no artifact written)\n    ",
+  "inputSchema": {
+    "properties": {
+      "generations": {
+        "default": 4,
+        "title": "Generations",
+        "type": "integer"
+      },
+      "population_size": {
+        "default": 6,
+        "title": "Population Size",
+        "type": "integer"
+      },
+      "scope": {
+        "default": "deep-manual",
+        "title": "Scope",
+        "type": "string"
+      },
+      "dry_run": {
+        "default": false,
+        "title": "Dry Run",
+        "type": "boolean"
+      }
+    },
+    "title": "engram_trigger_deep_sleepArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "engram_process_queue",
+  "description": "Process QUEUE/ items (stub).",
+  "inputSchema": {
+    "properties": {},
+    "title": "engram_process_queueArguments",
+    "type": "object"
+  }
+}

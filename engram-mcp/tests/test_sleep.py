@@ -295,3 +295,4 @@ def test_deep_sleep_validation_errors_and_get_last_status(minimal_vault, tmp_pat
     assert status is not None
     assert "deep-" in status["filename"]
     assert status["generations"] >= 2
+    assert "scope" in status

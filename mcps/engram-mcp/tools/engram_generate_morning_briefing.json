@@ -1,0 +1,20 @@
+{
+  "name": "engram_generate_morning_briefing",
+  "description": "Generate the daily morning briefing (<300 words target). Always reads BRAIN.md first. Idempotent by default: skips if briefing exists; pass force=true to regenerate.",
+  "inputSchema": {
+    "properties": {
+      "date": {
+        "default": "",
+        "title": "Date",
+        "type": "string"
+      },
+      "force": {
+        "default": false,
+        "title": "Force",
+        "type": "boolean"
+      }
+    },
+    "title": "engram_generate_morning_briefingArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "engram_trigger_sleep",
+  "description": "\n    Trigger a Sleep Cycle for offline memory consolidation (recurrent passes over recent context).\n\n    Always reads BRAIN.md first. Collects recent dailies/briefings/QUEUE/ARCHIVE/logs.\n    Runs 1-5 recurrent passes.\n    - If XAI_API_KEY is set in the environment: uses Grok 4.3 for richer abstraction on passes 2+.\n    - Otherwise: uses fast deterministic heuristic passes (no external calls).\n    Writes artifact to 04 - GENERATED/consolidated/ (or dry-run preview only).\n    Embeds exact BRAIN.md proposal (human pastes; never auto-edits BRAIN).\n    Follows all POS rules: logging, never-delete, 8-folder, human gate.\n\n    Args:\n        n_passes: 1-5 (default 3). Higher = deeper abstraction.\n        scope: \"nightly\" | \"manual\" | \"ad-hoc\" | \"weekly\"\n        dry_run: if True, synthesize + log only (no write to GENERATED)\n    ",
+  "inputSchema": {
+    "properties": {
+      "n_passes": {
+        "default": 3,
+        "title": "N Passes",
+        "type": "integer"
+      },
+      "scope": {
+        "default": "nightly",
+        "title": "Scope",
+        "type": "string"
+      },
+      "dry_run": {
+        "default": false,
+        "title": "Dry Run",
+        "type": "boolean"
+      }
+    },
+    "title": "engram_trigger_sleepArguments",
+    "type": "object"
+  }
+}

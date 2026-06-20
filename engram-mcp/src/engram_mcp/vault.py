@@ -1,5 +1,5 @@
 """
-engram_mcp.vault — Vault access layer for the Engram.
+engram_mcp.vault — Vault access layer for the Brain POS.
 
 Enforces the strict 8-folder POS contract at all times:
 - Never delete files (only archive with timestamp to 07 - ARCHIVE/).
@@ -52,6 +52,20 @@ class Vault:
     # Strict date format for all date-prefixed files (prevents path injection)
     DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+    @classmethod
+    def protected_paths(cls) -> frozenset[str]:
+        """Exact paths automation must never write, overwrite, or archive (derived from FOLDERS)."""
+        system = cls.FOLDERS["system"]
+        return frozenset({
+            f"{system}/BRAIN.md",
+            f"{system}/logs/system-log.md",
+        })
+
+    @classmethod
+    def protected_path_prefixes(cls) -> tuple[str, ...]:
+        """Prefix rules: entire SYSTEM/ tree — automation must not write/archive (log_action append only)."""
+        return (f"{cls.FOLDERS['system']}/",)
+
     def __init__(self, vault_root: Optional[Union[str, Path]] = None):
         if vault_root is None:
             vault_root = os.environ.get("BRAIN_VAULT_PATH")
@@ -81,25 +95,30 @@ class Vault:
         self._validate_vault()
 
     def _validate_vault(self) -> None:
-        """Ensure this is a valid Brain vault with the 8 required top-level folders."""
+        """Ensure this is a valid Engram vault with the 8 required top-level folders."""
         missing = []
         for key, name in self.FOLDERS.items():
             if not (self.root / name).exists():
                 missing.append(name)
         if missing:
             raise VaultError(
-                f"Invalid Brain vault at {self.root}. Missing required folders: {missing}. "
+                f"Invalid Engram vault at {self.root}. Missing required folders: {missing}. "
                 "Run from vault root or set BRAIN_VAULT_PATH env var."
             )
 
     # --- Core rule: always read BRAIN.md first ---
-    def read_brain_md(self) -> str:
-        """MANDATORY first read for every workflow/tool. Logs the read."""
+    def read_brain_md(self, log: bool = True) -> str:
+        """MANDATORY first read for every workflow/tool. Logs the read.
+
+        Pass log=False for health probes — the 30s Docker healthcheck was
+        appending ~2,880 identical entries/day to system-log.md.
+        """
         brain_path = self.root / self.FOLDERS["system"] / "BRAIN.md"
         if not brain_path.exists():
             raise VaultError("BRAIN.md not found — this violates core POS contract.")
         content = brain_path.read_text(encoding="utf-8")
-        self.log_action("read BRAIN.md (as required by POS rules before any action)")
+        if log:
+            self.log_action("read BRAIN.md (as required by POS rules before any action)")
         return content
 
     # --- Safe read helpers ---
@@ -139,11 +158,47 @@ class Vault:
     def _ensure_parent(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _reject_unsafe_rel(self, relative_path: Union[str, Path]) -> None:
+        """Reject traversal and absolute paths before resolve (shared by write and archive)."""
+        rel_str = str(relative_path)
+        if ".." in rel_str or rel_str.startswith(("/", "\\")):
+            raise VaultError(f"Unsafe relative path: {relative_path}")
+
+    def _canonical_vault_rel(self, relative_path: Union[str, Path]) -> str:
+        """Resolved vault-relative path (forward slashes) for protected-path comparison."""
+        resolved = self._safe_path(relative_path)
+        rel = resolved.relative_to(self.root.resolve())
+        return str(rel).replace("\\", "/")
+
+    def _is_protected_canonical(self, canonical: str) -> bool:
+        """True if resolved vault-relative path is under protected SYSTEM/ (or exact protected_paths)."""
+        c_lower = canonical.replace("\\", "/").lower()
+        if c_lower in {p.lower() for p in self.protected_paths()}:
+            return True
+        for prefix in self.protected_path_prefixes():
+            if c_lower.startswith(prefix.lower()):
+                return True
+        return False
+
+    def _assert_not_protected_write(self, relative_path: Union[str, Path], action: str = "write") -> None:
+        """
+        Block writes/deletes/archives targeting protected system files.
+        Resolves via _safe_path() first so ./, //, and indirect paths cannot bypass.
+        Protects entire 03 - SYSTEM/ tree (append-only logging via log_action only).
+        """
+        self._reject_unsafe_rel(relative_path)
+        canonical = self._canonical_vault_rel(relative_path)
+        if self._is_protected_canonical(canonical):
+            raise VaultError(
+                f"Protected path {action} blocked: {canonical}. "
+                "NEEDS HUMAN INPUT — system files (BRAIN.md, logs/) are human-gate only."
+            )
+
     def _write_to_generated(self, sub: str, filename: str, content: str) -> Path:
         """
         Central, safe writer for all GENERATED/ content.
         Enforces:
-        - sub must be in GENERATED_SUBS (briefings/summaries/etc.)
+        - sub must be in GENERATED_SUBS (briefings/summaries/etc.) or explicitly allowlisted (e.g. consolidated/deep for Deep Sleep BES)
         - filename must be safe (no path separators)
         - full path containment under the approved subdir (prevents ../ escapes)
         - Uses _safe_path for root containment.
@@ -196,6 +251,13 @@ class Vault:
         self.log_action(f"Wrote JSON to GENERATED/{sub}: {target.relative_to(self.root)}")
         return target
 
+    def get_briefing_path(self, date: str) -> Path:
+        """Return the canonical morning briefing path for a date (may not exist yet)."""
+        if not self.DATE_RE.match(str(date)):
+            raise VaultError(f"Invalid date for briefing (must be YYYY-MM-DD): {date}")
+        rel = f"{self.FOLDERS['generated']}/briefings/{date}-morning.md"
+        return self._safe_path(rel)
+
     def write_briefing(self, date: str, content: str) -> Path:
         """Write morning briefing to 04 - GENERATED/briefings/. Delegates to central safe writer."""
         if not content.strip():
@@ -231,21 +293,35 @@ class Vault:
         """
         if not content or not str(content).strip():
             raise VaultError("Refusing to write empty file via write_file().")
-        rel_str = str(relative_path)
-        if ".." in rel_str or rel_str.startswith(("/", "\\")):
-            raise VaultError(f"Unsafe relative path for write_file: {relative_path}")
+        self._reject_unsafe_rel(relative_path)
+        self._assert_not_protected_write(relative_path, action="write")
         target = self._safe_path(relative_path)
+        rel_str = str(relative_path)
         self._ensure_parent(target)
         target.write_text(content, encoding="utf-8")
         self.log_action(f"Wrote file: {rel_str} ({reason})")
         return target
 
     # --- Never-delete archive rule ---
+    def write_brain_md(self, content: str, reason: str = "update") -> Path:
+        """
+        Explicit human-gate-only API. Automation MUST NOT edit BRAIN.md.
+        Always raises VaultError — proposals belong in GENERATED; human pastes.
+        """
+        raise VaultError(
+            f"write_brain_md() is human-gate-only (reason={reason!r}). Automation must NEVER modify "
+            "03 - SYSTEM/BRAIN.md. Propose changes in GENERATED artifacts; human pastes."
+        )
+
     def archive_file(self, src_relative: Union[str, Path], reason: str = "processed") -> Path:
         """
         Move a file to 07 - ARCHIVE/ with timestamp prefix. NEVER deletes.
         Example: 2026-05-21-142530-original-name.md
+
+        POS spec alias: archive_with_timestamp() — same behavior.
         """
+        self._reject_unsafe_rel(src_relative)
+        self._assert_not_protected_write(src_relative, action="archive")
         src = self._safe_path(src_relative)
         if not src.exists():
             raise VaultError(f"Cannot archive non-existent file: {src_relative}")
@@ -266,6 +342,10 @@ class Vault:
         shutil.move(str(src), str(dest))
         self.log_action(f"Archived ({reason}): {src_relative} → {dest.relative_to(self.root)}")
         return dest
+
+    def archive_with_timestamp(self, src_relative: Union[str, Path], reason: str = "processed") -> Path:
+        """Alias for archive_file() — POS spec name for never-delete archive moves."""
+        return self.archive_file(src_relative, reason=reason)
 
     # --- List / discovery (used by processors) ---
     def list_capture_items(self) -> list[Path]:

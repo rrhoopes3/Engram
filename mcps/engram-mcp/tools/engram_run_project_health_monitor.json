@@ -1,0 +1,9 @@
+{
+  "name": "engram_run_project_health_monitor",
+  "description": "Project health scoring + QUEUE REVIEW items (stub).",
+  "inputSchema": {
+    "properties": {},
+    "title": "engram_run_project_health_monitorArguments",
+    "type": "object"
+  }
+}

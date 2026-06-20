@@ -17,7 +17,7 @@ This is the intelligence layer of the Engram POS. It's a dedicated MCP server th
 
 | Tool                              | Description                                      | Schedule (from spec)     |
 |-----------------------------------|--------------------------------------------------|--------------------------|
-| `engram_generate_morning_briefing` | Daily briefing (<300 words)                      | 6:00 AM daily            |
+| `engram_generate_morning_briefing` | Daily briefing (<300 words). **Idempotent:** skips if `{date}-morning.md` exists (non-empty); pass `force=true` to regenerate. | 6:00 AM daily            |
 | `engram_process_capture`           | Empty 00-CAPTURE/, classify & file everything    | 8:00 PM daily            |
 | `engram_process_queue`             | Handle VERB-*.md items in 05-QUEUE/              | Every 2 hours            |
 | `engram_run_weekly_review`         | Sunday review + auto-update priorities           | Sunday 7:00 PM           |
@@ -131,6 +131,12 @@ print(engram_generate_morning_briefing()[:1200])
 '
 ```
 Expected: ✅ healthy (now also includes "Last sleep: ..." status), briefing generated to `04 - GENERATED/briefings/`, BRAIN.md read first, action logged to `03 - SYSTEM/logs/system-log.md`, no deletions.
+
+**Morning briefing idempotency (N8N / cron):** `engram_generate_morning_briefing` skips when `04 - GENERATED/briefings/YYYY-MM-DD-morning.md` already exists, is non-empty, and contains the `# Morning Briefing — {date}` heading (`force=false` default). Re-running the 6:00 AM workflow is safe — you get a success message with the existing path. To regenerate after vault edits or a corrupt/empty/malformed file, call with `force=true`.
+
+**Capture processor (N8N / cron):** `engram_process_capture` is idempotent on empty inbox — 0 items logs an explicit skip and writes no report. Items are filed via `vault.write_file()` then archived only on **successful** filing (originals stay in `00 - CAPTURE/` if filing fails). Reports use collision-safe `{date}-{HHMM}-capture-report.md` naming in `04 - GENERATED/summaries/` for same-day reruns.
+
+**Healthcheck log discipline:** `engram_health` (Docker probe) reads BRAIN.md silently — no per-probe `read BRAIN.md` log lines. Per-tool vault path logging requires `ENGRAM_MCP_DEBUG_VAULT=1`; server startup always logs vault path once.
 
 # Docker-native health (new in 2026-05 hardening)
 docker ps --filter name=engram-mcp   # look for "healthy" in STATUS (powered by same engram_health + HEALTHCHECK in Dockerfile/compose)
