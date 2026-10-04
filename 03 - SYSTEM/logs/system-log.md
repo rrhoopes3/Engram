@@ -66,3 +66,5 @@ Format: `YYYY-MM-DD HH:MM — [EVENT] — details`
 - **2026-05-29 17:48** — Wrote to GENERATED/graph-export: 04 - GENERATED\graph-export\overlay-edges.md
 - **2026-05-29 17:48** — Phase 2 bridge: wrote companion edges markdown → 04 - GENERATED\graph-export\2026-05-29-1748-overlay-edges.md (from sleep=True, deep=False)
 - **2026-05-29 17:48** — Phase 2 complete. Bridge script + companion markdown generation working. Manifest updated with usage. BRAIN.md proposal text prepared (human paste only).
+- **2026-10-04 20:15** — read BRAIN.md (as required by POS rules before any action)
+- **2026-10-04 20:15** — Manual session (Claude Code): added reference note `02 - RESOURCES/references/2026-10-04-mnemos-research.md` — review of Riley Coyote's Mnemos memory system (claims vs. verified code) and candidate ideas for Engram. No other vault content changed. Queue items proposed only (NEEDS HUMAN INPUT).
